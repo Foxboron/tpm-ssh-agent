@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	keyfile "github.com/foxboron/go-tpm-keyfiles"
+	"github.com/foxboron/ssh-tpm-agent/internal/keyring"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
 	"golang.org/x/crypto/ssh"
@@ -16,6 +17,15 @@ import (
 var (
 	ErrOldKey = errors.New("old format on key")
 )
+
+type SSHTPMKeys interface {
+	Signer(*keyring.ThreadKeyring, func() ([]byte, error), func() transport.TPMCloser, func(*keyfile.TPMKey) ([]byte, error)) *SSHKeySigner
+	GetDescription() string
+	Fingerprint() string
+	AuthorizedKey() []byte
+	AgentKey() *agent.Key
+	GetTPMKey() *keyfile.TPMKey
+}
 
 // SSHTPMKey is a wrapper for TPMKey implementing the ssh.PublicKey specific parts
 type SSHTPMKey struct {
@@ -84,6 +94,10 @@ func (k *SSHTPMKey) AuthorizedKey() []byte {
 	return []byte(fmt.Sprintf("%s %s\n", strings.TrimSpace(string(ssh.MarshalAuthorizedKey(*k.PublicKey))), k.Description))
 }
 
+func (k *SSHTPMKey) GetDescription() string {
+	return k.Description
+}
+
 func (k *SSHTPMKey) AgentKey() *agent.Key {
 	if k.Certificate != nil {
 		return &agent.Key{
@@ -98,6 +112,14 @@ func (k *SSHTPMKey) AgentKey() *agent.Key {
 		Blob:    (*k.PublicKey).Marshal(),
 		Comment: k.Description,
 	}
+}
+
+func (k *SSHTPMKey) GetTPMKey() *keyfile.TPMKey {
+	return k.TPMKey
+}
+
+func (k *SSHTPMKey) Signer(keyring *keyring.ThreadKeyring, ownerAuth func() ([]byte, error), tpm func() transport.TPMCloser, auth func(*keyfile.TPMKey) ([]byte, error)) *SSHKeySigner {
+	return NewSSHKeySigner(k, keyring, ownerAuth, tpm, auth)
 }
 
 func Decode(b []byte) (*SSHTPMKey, error) {
